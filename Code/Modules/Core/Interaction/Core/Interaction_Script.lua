@@ -10,13 +10,13 @@ function NS.Script:Load()
 
 	do
 
-		function NS.Script:SetActiveState(value)
-			NS.Variables.LastActive = NS.Variables.Active
-			NS.Variables.Active = value
-		end
+		local CloseInteractionFrame = CreateFrame("Frame")
+		local pendingDeselectTarget = nil
 
-		local function CloseInteraction(deselectTarget)
-			if not NS.Variables.Active then
+		local function CloseBlizzardInteraction(deselectTarget)
+			if InCombatLockdown() then
+				pendingDeselectTarget = deselectTarget
+				CloseInteractionFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 				return
 			end
 
@@ -30,6 +30,36 @@ function NS.Script:Load()
 				HideUIPanel(QuestFrame)
 				HideUIPanel(GossipFrame)
 			end
+		end
+
+		CloseInteractionFrame:SetScript("OnEvent", function(self, event)
+			if event == "PLAYER_REGEN_ENABLED" and not InCombatLockdown() then
+				self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+
+				if not NS.Variables.Active then
+					CloseBlizzardInteraction(pendingDeselectTarget)
+				end
+
+				pendingDeselectTarget = nil
+			end
+		end)
+
+		CallbackRegistry:Add("START_INTERACTION", function()
+			CloseInteractionFrame:UnregisterEvent("PLAYER_REGEN_ENABLED")
+			pendingDeselectTarget = nil
+		end, 0)
+
+		function NS.Script:SetActiveState(value)
+			NS.Variables.LastActive = NS.Variables.Active
+			NS.Variables.Active = value
+		end
+
+		local function CloseInteraction(deselectTarget)
+			if not NS.Variables.Active then
+				return
+			end
+
+			CloseBlizzardInteraction(deselectTarget)
 
 			do -- State
 				NS.Script:SetActiveState(false)
@@ -226,13 +256,13 @@ function NS.Script:Load()
 
 		do -- Prevent overlapping frames
 			hooksecurefunc(QuestFrame, "Show", function()
-				if GossipFrame:IsVisible() then
+				if not InCombatLockdown() and GossipFrame:IsVisible() then
 					HideUIPanel(GossipFrame)
 				end
 			end)
 
 			hooksecurefunc(GossipFrame, "Show", function()
-				if QuestFrame:IsVisible() then
+				if not InCombatLockdown() and QuestFrame:IsVisible() then
 					HideUIPanel(QuestFrame)
 				end
 			end)
